@@ -1,7 +1,7 @@
 // Service Worker 文件 (sw.js) - 强力保活版
 
 // 缓存版本号
-const CACHE_VERSION = 'v1.7.30'; // 版本号+1
+const CACHE_VERSION = 'v1.7.31'; // 版本号+1
 const CACHE_NAME = `ephone-cache-${CACHE_VERSION}`;
 
 const URLS_TO_CACHE = [
@@ -54,32 +54,29 @@ async function normalizeGoogleAiStudioRequest(request) {
   }
 
   const normalizedUrl = new URL('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
-  const headers = new Headers(request.headers);
   const apiKey = url.searchParams.get('key');
-
-  if (apiKey && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${apiKey}`);
+  if (apiKey) {
+    normalizedUrl.searchParams.set('key', apiKey);
   }
 
+  const headers = new Headers(request.headers);
+  headers.delete('authorization');
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
   console.log('SW: 已将 Google AI Studio 请求规范化为 OpenAI 兼容端点。', url.pathname);
 
-  return fetch(normalizedUrl.toString(), {
-    method: request.method,
-    headers,
-    body: bodyText,
-    mode: 'cors',
-    credentials: request.credentials,
-    cache: request.cache,
-    redirect: request.redirect,
-    referrer: request.referrer,
-    referrerPolicy: request.referrerPolicy,
-    integrity: request.integrity,
-    keepalive: request.keepalive
-  });
+  try {
+    return await fetch(normalizedUrl.toString(), {
+      method: request.method,
+      headers,
+      body: bodyText
+    });
+  } catch (error) {
+    console.warn('SW: Google AI Studio 请求规范化失败，回退原请求。', error);
+    return fetch(request);
+  }
 }
 
 // --- 强力保活核心代码 Start ---
