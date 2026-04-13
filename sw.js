@@ -1,7 +1,7 @@
 // Service Worker 文件 (sw.js) - 强力保活版
 
 // 缓存版本号
-const CACHE_VERSION = 'v1.7.29'; // 版本号+1
+const CACHE_VERSION = 'v1.7.30'; // 版本号+1
 const CACHE_NAME = `ephone-cache-${CACHE_VERSION}`;
 
 const URLS_TO_CACHE = [
@@ -15,6 +15,72 @@ const URLS_TO_CACHE = [
   'https://s3plus.meituan.net/opapisdk/op_ticket_885190757_1758510900942_qdqqd_djw0z2.jpeg',
   'https://s3plus.meituan.net/opapisdk/op_ticket_885190757_1756312261242_qdqqd_g0eriz.jpeg'
 ];
+
+function isGoogleAiStudioRequest(url) {
+  return url.hostname === 'generativelanguage.googleapis.com';
+}
+
+function isGoogleAiStudioOpenAIPath(url) {
+  return url.pathname === '/v1beta/openai/chat/completions';
+}
+
+function isOpenAICompatibleBody(body) {
+  return Boolean(body) && Array.isArray(body.messages);
+}
+
+async function normalizeGoogleAiStudioRequest(request) {
+  const url = new URL(request.url);
+  if (!isGoogleAiStudioRequest(url) || isGoogleAiStudioOpenAIPath(url)) {
+    return fetch(request);
+  }
+
+  let bodyText = '';
+  try {
+    bodyText = await request.clone().text();
+  } catch (error) {
+    console.warn('SW: 无法读取 Google AI Studio 请求体，保持原请求。', error);
+    return fetch(request);
+  }
+
+  let body;
+  try {
+    body = bodyText ? JSON.parse(bodyText) : null;
+  } catch (error) {
+    return fetch(request);
+  }
+
+  if (!isOpenAICompatibleBody(body)) {
+    return fetch(request);
+  }
+
+  const normalizedUrl = new URL('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+  const headers = new Headers(request.headers);
+  const apiKey = url.searchParams.get('key');
+
+  if (apiKey && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${apiKey}`);
+  }
+
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  console.log('SW: 已将 Google AI Studio 请求规范化为 OpenAI 兼容端点。', url.pathname);
+
+  return fetch(normalizedUrl.toString(), {
+    method: request.method,
+    headers,
+    body: bodyText,
+    mode: 'cors',
+    credentials: request.credentials,
+    cache: request.cache,
+    redirect: request.redirect,
+    referrer: request.referrer,
+    referrerPolicy: request.referrerPolicy,
+    integrity: request.integrity,
+    keepalive: request.keepalive
+  });
+}
 
 // --- 强力保活核心代码 Start ---
 // 只要浏览器允许，这个 Interval 会一直运行，试图保持 SW 活跃
@@ -71,7 +137,12 @@ self.addEventListener('fetch', event => {
       return;
   }
 
-  if (event.request.method !== 'GET') return;
+  if (event.request.method !== 'GET') {
+    if (event.request.method === 'POST' && isGoogleAiStudioRequest(new URL(event.request.url))) {
+      event.respondWith(normalizeGoogleAiStudioRequest(event.request));
+    }
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request)
