@@ -1,7 +1,7 @@
 // Service Worker 文件 (sw.js) - 强力保活版
 
 // 缓存版本号
-const CACHE_VERSION = 'v1.7.31'; // 版本号+1
+const CACHE_VERSION = 'v1.7.32'; // 版本号+1
 const CACHE_NAME = `ephone-cache-${CACHE_VERSION}`;
 
 const URLS_TO_CACHE = [
@@ -60,7 +60,9 @@ async function normalizeGoogleAiStudioRequest(request) {
   }
 
   const headers = new Headers(request.headers);
-  headers.delete('authorization');
+  if (!headers.has('Authorization') && apiKey) {
+    headers.set('Authorization', `Bearer ${apiKey}`);
+  }
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
@@ -80,19 +82,12 @@ async function normalizeGoogleAiStudioRequest(request) {
 }
 
 // --- 强力保活核心代码 Start ---
-// 只要浏览器允许，这个 Interval 会一直运行，试图保持 SW 活跃
 setInterval(() => {
-    // 像看门狗一样，每20秒检查一次
-    // 实际上什么都不做，只是为了保持 JS 线程活跃
-    // 如果需要更强力的，可以尝试 self.registration.update(); 但那会消耗流量
-    // console.log('SW Heartbeat: ❤️');
 }, 20000);
 // --- 强力保活核心代码 End ---
 
-// 1. 安装事件
 self.addEventListener('install', event => {
   console.log('Service Worker 正在安装 (保活增强版)...');
-  // 强制跳过等待，立刻接管
   self.skipWaiting();
   
   event.waitUntil(
@@ -104,7 +99,6 @@ self.addEventListener('install', event => {
   );
 });
 
-// 2. 激活事件
 self.addEventListener('activate', event => {
   console.log('Service Worker 正在激活...');
   event.waitUntil(
@@ -119,16 +113,12 @@ self.addEventListener('activate', event => {
       );
     }).then(() => {
         console.log('Service Worker 准备就绪，开始接管页面！');
-        // 关键：立即控制所有打开的客户端（Tab页）
         return self.clients.claim();
     })
   );
 });
 
-// 3. 拦截网络请求
 self.addEventListener('fetch', event => {
-  // 如果是心跳 Ping 请求（虚拟地址），直接返回 200 OK，不走网络
-  // 这是配合 script.js 里的保活 fetch 使用的
   if (event.request.url.includes('/_keep_alive_ping_')) {
       event.respondWith(new Response('pong'));
       return;
@@ -152,11 +142,8 @@ self.addEventListener('fetch', event => {
   );
 });
 
-// 4. 监听消息（配合主线程心跳）
 self.addEventListener('message', event => {
     if (event.data === 'ping') {
-        // console.log('SW: 收到主线程 Ping，我还活着');
-        // 可以选择回复，也可以不回复，接收到消息本身就会重置 SW 的休眠倒计时
     }
 });
 
