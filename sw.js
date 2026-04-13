@@ -1,7 +1,7 @@
 // Service Worker 文件 (sw.js) - 强力保活版
 
 // 缓存版本号
-const CACHE_VERSION = 'v1.7.32'; // 版本号+1
+const CACHE_VERSION = 'v1.7.33'; // 版本号+1
 const CACHE_NAME = `ephone-cache-${CACHE_VERSION}`;
 
 const URLS_TO_CACHE = [
@@ -24,13 +24,53 @@ function isGoogleAiStudioOpenAIPath(url) {
   return url.pathname === '/v1beta/openai/chat/completions';
 }
 
+function isGoogleAiStudioNativePath(url) {
+  return url.pathname.includes(':generateContent') || url.pathname.includes(':streamGenerateContent');
+}
+
 function isOpenAICompatibleBody(body) {
   return Boolean(body) && Array.isArray(body.messages);
 }
 
+function isGeminiNativeBody(body) {
+  return Boolean(body) && Array.isArray(body.contents);
+}
+
+function buildGoogleAiStudioHeaders(requestHeaders, apiKey) {
+  const headers = new Headers(requestHeaders);
+  if (!headers.has('Authorization') && apiKey) {
+    headers.set('Authorization', `Bearer ${apiKey}`);
+  }
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  return headers;
+}
+
+function buildGoogleAiStudioTarget(url, body, apiKey) {
+  if (isOpenAICompatibleBody(body)) {
+    const target = new URL('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+    if (apiKey) {
+      target.searchParams.set('key', apiKey);
+    }
+    return target;
+  }
+
+  if (isGeminiNativeBody(body) && typeof body.model === 'string' && body.model.trim()) {
+    const modelName = body.model.replace(/^models\//, '').trim();
+    const target = new URL(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`);
+    if (apiKey) {
+      target.searchParams.set('key', apiKey);
+    }
+    return target;
+  }
+
+  return null;
+}
+
 async function normalizeGoogleAiStudioRequest(request) {
   const url = new URL(request.url);
-  if (!isGoogleAiStudioRequest(url) || isGoogleAiStudioOpenAIPath(url)) {
+  if (!isGoogleAiStudioRequest(url) || isGoogleAiStudioOpenAIPath(url) || isGoogleAiStudioNativePath(url)) {
     return fetch(request);
   }
 
@@ -49,25 +89,14 @@ async function normalizeGoogleAiStudioRequest(request) {
     return fetch(request);
   }
 
-  if (!isOpenAICompatibleBody(body)) {
+  const apiKey = url.searchParams.get('key');
+  const normalizedUrl = buildGoogleAiStudioTarget(url, body, apiKey);
+  if (!normalizedUrl) {
     return fetch(request);
   }
 
-  const normalizedUrl = new URL('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
-  const apiKey = url.searchParams.get('key');
-  if (apiKey) {
-    normalizedUrl.searchParams.set('key', apiKey);
-  }
-
-  const headers = new Headers(request.headers);
-  if (!headers.has('Authorization') && apiKey) {
-    headers.set('Authorization', `Bearer ${apiKey}`);
-  }
-  if (!headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
-
-  console.log('SW: 已将 Google AI Studio 请求规范化为 OpenAI 兼容端点。', url.pathname);
+  const headers = buildGoogleAiStudioHeaders(request.headers, apiKey);
+  console.log('SW: 已将 Google AI Studio 请求规范化。', url.pathname, '->', normalizedUrl.pathname);
 
   try {
     return await fetch(normalizedUrl.toString(), {
@@ -81,10 +110,8 @@ async function normalizeGoogleAiStudioRequest(request) {
   }
 }
 
-// --- 强力保活核心代码 Start ---
 setInterval(() => {
 }, 20000);
-// --- 强力保活核心代码 End ---
 
 self.addEventListener('install', event => {
   console.log('Service Worker 正在安装 (保活增强版)...');
