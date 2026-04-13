@@ -2,6 +2,7 @@
   const nativeFetch = window.fetch.bind(window);
   const GOOGLE_HOST = 'generativelanguage.googleapis.com';
   const GOOGLE_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+  const CORS_PROXY_BASE = 'https://corsproxy.io/?url=';
 
   function isGoogleUrl(input) {
     try {
@@ -14,6 +15,19 @@
 
   function getUrl(input) {
     return new URL(typeof input === 'string' ? input : input.url, window.location.href);
+  }
+
+  function buildProxyUrl(targetUrl) {
+    return `${CORS_PROXY_BASE}${encodeURIComponent(targetUrl)}`;
+  }
+
+  async function fetchWithCorsFallback(targetUrl, options, label) {
+    try {
+      return await nativeFetch(targetUrl, options);
+    } catch (error) {
+      console.warn(`Google API ${label} request failed directly, retrying through CORS proxy.`, error);
+      return nativeFetch(buildProxyUrl(targetUrl), options);
+    }
   }
 
   function extractApiKey(url, headers) {
@@ -40,6 +54,22 @@
       return '';
     }
     return model.replace(/^models\//, '').trim();
+  }
+
+  function extractModelFromPath(pathname) {
+    const marker = '/models/';
+    const markerIndex = pathname.indexOf(marker);
+    if (markerIndex === -1) {
+      return '';
+    }
+
+    const tail = pathname.slice(markerIndex + marker.length);
+    const encodedModel = tail.split(':')[0];
+    try {
+      return normalizeModelName(decodeURIComponent(encodedModel));
+    } catch {
+      return normalizeModelName(encodedModel);
+    }
   }
 
   function extractTextFromContent(content) {
@@ -161,6 +191,22 @@
     return headers;
   }
 
+  function buildModelsUrl(apiKey) {
+    const modelUrl = new URL(`${GOOGLE_BASE}/models`);
+    if (apiKey) {
+      modelUrl.searchParams.set('key', apiKey);
+    }
+    return modelUrl.toString();
+  }
+
+  function buildGenerateContentUrl(model, apiKey) {
+    const targetUrl = new URL(`${GOOGLE_BASE}/models/${model}:generateContent`);
+    if (apiKey) {
+      targetUrl.searchParams.set('key', apiKey);
+    }
+    return targetUrl.toString();
+  }
+
   async function normalizeGoogleRequest(input, init) {
     const originalUrl = getUrl(input);
     const originalRequest = input instanceof Request ? input : null;
@@ -170,14 +216,11 @@
 
     if (method === 'GET') {
       if (originalUrl.pathname.endsWith('/models') || originalUrl.pathname.endsWith('/models/')) {
-        const modelUrl = new URL(`${GOOGLE_BASE}/models`);
-        if (apiKey) {
-          modelUrl.searchParams.set('key', apiKey);
-        }
-        return nativeFetch(modelUrl.toString(), {
-          method: 'GET',
-          headers: buildMinimalHeaders(false)
-        });
+        return fetchWithCorsFallback(
+          buildModelsUrl(apiKey),
+          { method: 'GET', headers: buildMinimalHeaders(false) },
+          'models'
+        );
       }
       return nativeFetch(input, init);
     }
@@ -196,22 +239,21 @@
       return nativeFetch(input, init);
     }
 
-    const model = normalizeModelName(body.model);
+    const model = normalizeModelName(body.model) || extractModelFromPath(originalUrl.pathname);
     const nativeBody = buildNativeGeminiBody(body);
     if (!model || !nativeBody) {
       return nativeFetch(input, init);
     }
 
-    const targetUrl = new URL(`${GOOGLE_BASE}/models/${model}:generateContent`);
-    if (apiKey) {
-      targetUrl.searchParams.set('key', apiKey);
-    }
-
-    return nativeFetch(targetUrl.toString(), {
-      method: 'POST',
-      headers: buildMinimalHeaders(true),
-      body: JSON.stringify(nativeBody)
-    });
+    return fetchWithCorsFallback(
+      buildGenerateContentUrl(model, apiKey),
+      {
+        method: 'POST',
+        headers: buildMinimalHeaders(true),
+        body: JSON.stringify(nativeBody)
+      },
+      'generateContent'
+    );
   }
 
   window.fetch = async function patchedFetch(input, init) {
