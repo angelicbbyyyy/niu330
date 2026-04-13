@@ -85,97 +85,109 @@ async function parseErrorResponse(response) {
   }
 }
 
-function replaceNodeWithoutListeners(node) {
-  if (!node || !node.parentNode) return node;
-  const clone = node.cloneNode(true);
-  node.parentNode.replaceChild(clone, node);
-  return clone;
-}
+const MODEL_FETCH_CONFIG = {
+  "fetch-models-btn": {
+    urlInputId: "proxy-url",
+    keyInputId: "api-key",
+    selectId: "model-select",
+    successMessage: "模型列表已更新",
+  },
+  "fetch-secondary-models-btn": {
+    urlInputId: "secondary-proxy-url",
+    keyInputId: "secondary-api-key",
+    selectId: "secondary-model-select",
+    successMessage: "副模型列表已更新",
+  },
+};
 
-function attachModelFetchHandler(buttonId, urlInputId, keyInputId, selectId, successMessage) {
-  const originalButton = document.getElementById(buttonId);
-  const button = replaceNodeWithoutListeners(originalButton);
-  if (!button) return;
+async function runModelFetch(buttonId) {
+  const config = MODEL_FETCH_CONFIG[buttonId];
+  const button = document.getElementById(buttonId);
+  const urlInput = document.getElementById(config?.urlInputId);
+  const keyInput = document.getElementById(config?.keyInputId);
+  const select = document.getElementById(config?.selectId);
 
-  button.addEventListener("click", async () => {
-    const urlInput = document.getElementById(urlInputId);
-    const keyInput = document.getElementById(keyInputId);
-    const select = document.getElementById(selectId);
+  const baseUrl = normalizeApiBaseUrl(urlInput?.value);
+  const apiKey = String(keyInput?.value || "").trim();
 
-    const baseUrl = normalizeApiBaseUrl(urlInput?.value);
-    const apiKey = String(keyInput?.value || "").trim();
+  if (!baseUrl || !apiKey) {
+    alert("请先填写完整的 API 地址和 API Key");
+    return;
+  }
 
-    if (!baseUrl || !apiKey) {
-      alert("请先填写完整的 API 地址和 API Key");
-      return;
+  if (button) {
+    button.disabled = true;
+  }
+  const originalLabel = button?.textContent || "";
+  if (button) {
+    button.textContent = "拉取中...";
+  }
+
+  try {
+    const request = buildModelsRequest(baseUrl, apiKey);
+    const response = await fetch(request.url, request.options);
+
+    if (!response.ok) {
+      const errorInfo = await parseErrorResponse(response);
+      console.error("Model fetch failed:", {
+        request,
+        status: response.status,
+        error: errorInfo,
+      });
+      throw new Error(errorInfo.message);
     }
 
-    button.disabled = true;
-    const originalLabel = button.textContent;
-    button.textContent = "拉取中...";
+    const payload = await response.json();
+    const models = normalizeModelList(payload);
 
-    try {
-      const request = buildModelsRequest(baseUrl, apiKey);
-      const response = await fetch(request.url, request.options);
+    if (!Array.isArray(models)) {
+      console.error("Unexpected model list payload:", payload);
+      throw new Error("API返回了非预期的格式");
+    }
 
-      if (!response.ok) {
-        const errorInfo = await parseErrorResponse(response);
-        console.error("Model fetch failed:", {
-          request,
-          status: response.status,
-          error: errorInfo,
-        });
-        throw new Error(errorInfo.message);
+    const previousValue = select?.value || "";
+    if (select) {
+      select.innerHTML = "";
+    }
+
+    models.forEach((model) => {
+      const id = model?.id || model?.name || model?.model || "";
+      if (!id || !select) return;
+
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = model?.label || model?.displayName || id;
+      if (id === previousValue) {
+        option.selected = true;
       }
+      select.appendChild(option);
+    });
 
-      const payload = await response.json();
-      const models = normalizeModelList(payload);
+    if (select && !select.value && select.options.length > 0) {
+      select.selectedIndex = 0;
+    }
 
-      if (!Array.isArray(models)) {
-        console.error("Unexpected model list payload:", payload);
-        throw new Error("API返回了非预期的格式");
-      }
-
-      const previousValue = select?.value || "";
-      if (select) {
-        select.innerHTML = "";
-      }
-
-      models.forEach((model) => {
-        const id = model?.id || model?.name || model?.model || "";
-        if (!id || !select) return;
-
-        const option = document.createElement("option");
-        option.value = id;
-        option.textContent = model?.label || model?.displayName || id;
-        if (id === previousValue) {
-          option.selected = true;
-        }
-        select.appendChild(option);
-      });
-
-      if (select && !select.value && select.options.length > 0) {
-        select.selectedIndex = 0;
-      }
-
-      alert(successMessage);
-    } catch (error) {
-      console.error("Fetch models error:", error);
-      alert(`拉取模型失败: ${error?.message || error}`);
-    } finally {
+    alert(config.successMessage);
+  } catch (error) {
+    console.error("Fetch models error:", error);
+    alert(`拉取模型失败: ${error?.message || error}`);
+  } finally {
+    if (button) {
       button.disabled = false;
       button.textContent = originalLabel;
     }
-  });
+  }
 }
 
-window.addEventListener("load", () => {
-  attachModelFetchHandler("fetch-models-btn", "proxy-url", "api-key", "model-select", "模型列表已更新");
-  attachModelFetchHandler(
-    "fetch-secondary-models-btn",
-    "secondary-proxy-url",
-    "secondary-api-key",
-    "secondary-model-select",
-    "副模型列表已更新",
-  );
-});
+document.addEventListener(
+  "click",
+  (event) => {
+    const button = event.target.closest("#fetch-models-btn, #fetch-secondary-models-btn");
+    if (!button) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    runModelFetch(button.id);
+  },
+  true,
+);
