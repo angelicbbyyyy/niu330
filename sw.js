@@ -1,7 +1,7 @@
 // Service Worker 文件 (sw.js) - 强力保活版
 
 // 缓存版本号
-const CACHE_VERSION = 'v1.7.36'; // 版本号+1
+const CACHE_VERSION = 'v1.7.37'; // 版本号+1
 const CACHE_NAME = `ephone-cache-${CACHE_VERSION}`;
 
 const URLS_TO_CACHE = [
@@ -157,14 +157,12 @@ function buildNativeGeminiRequest(body) {
   return null;
 }
 
-function buildGoogleHeaders(headers) {
-  const cleanHeaders = new Headers(headers);
-  cleanHeaders.delete('authorization');
-  cleanHeaders.delete('Authorization');
-  cleanHeaders.delete('x-goog-api-key');
-  cleanHeaders.delete('api-key');
-  cleanHeaders.set('content-type', 'application/json');
-  return cleanHeaders;
+function buildMinimalGoogleHeaders(withJsonBody) {
+  const headers = new Headers();
+  if (withJsonBody) {
+    headers.set('content-type', 'application/json');
+  }
+  return headers;
 }
 
 async function normalizeGoogleAiStudioRequest(request) {
@@ -174,7 +172,6 @@ async function normalizeGoogleAiStudioRequest(request) {
   }
 
   const apiKey = extractGoogleApiKey(url, request.headers);
-  const headers = buildGoogleHeaders(request.headers);
 
   if (request.method === 'GET') {
     const modelUrl = new URL('https://generativelanguage.googleapis.com/v1beta/models');
@@ -183,7 +180,7 @@ async function normalizeGoogleAiStudioRequest(request) {
     }
 
     if (url.pathname.endsWith('/models') || url.pathname.endsWith('/models/')) {
-      return fetch(modelUrl.toString(), { method: 'GET', headers });
+      return fetch(modelUrl.toString(), { method: 'GET', headers: buildMinimalGoogleHeaders(false) });
     }
 
     return fetch(request);
@@ -219,7 +216,7 @@ async function normalizeGoogleAiStudioRequest(request) {
 
   return fetch(targetUrl.toString(), {
     method: 'POST',
-    headers,
+    headers: buildMinimalGoogleHeaders(true),
     body: JSON.stringify(nativeBody)
   });
 }
