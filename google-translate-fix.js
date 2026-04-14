@@ -1,6 +1,7 @@
 (function () {
   const TARGET_LANGUAGE = "en";
   const STORAGE_KEY = "niu330_auto_translate_lang";
+  const SESSION_RELOAD_KEY = "niu330_translate_reload_once";
   let translateAttempts = 0;
   let translateObserver = null;
 
@@ -22,6 +23,23 @@
     return document.querySelector(".goog-te-combo");
   }
 
+  function setGoogleTranslateCookie(language) {
+    const cookieValue = `/zh-CN/${language}`;
+    const baseCookie = `googtrans=${cookieValue};path=/`;
+    document.cookie = baseCookie;
+
+    const hostname = window.location.hostname.replace(/^www\./i, "");
+    if (hostname.includes(".")) {
+      document.cookie = `${baseCookie};domain=.${hostname}`;
+    }
+  }
+
+  function markTranslationApplied(language) {
+    document.documentElement.setAttribute("lang", language);
+    setStoredLanguage(language);
+    setGoogleTranslateCookie(language);
+  }
+
   function triggerLanguage(language) {
     const select = findTranslateSelect();
     if (!select) return false;
@@ -33,13 +51,26 @@
   }
 
   function ensureTranslation(language = getStoredLanguage()) {
+    markTranslationApplied(language);
+
     if (triggerLanguage(language)) {
-      document.documentElement.setAttribute("lang", language);
-      setStoredLanguage(language);
+      try {
+        sessionStorage.removeItem(SESSION_RELOAD_KEY);
+      } catch (_error) {}
       return;
     }
 
     translateAttempts += 1;
+    if (translateAttempts === 12) {
+      try {
+        if (!sessionStorage.getItem(SESSION_RELOAD_KEY)) {
+          sessionStorage.setItem(SESSION_RELOAD_KEY, "1");
+          window.location.reload();
+          return;
+        }
+      } catch (_error) {}
+    }
+
     if (translateAttempts > 30) return;
     window.setTimeout(() => ensureTranslation(language), 500);
   }
@@ -61,6 +92,7 @@
   window.googleTranslateElementInit = function () {
     if (!window.google || !window.google.translate) return;
 
+    markTranslationApplied(getStoredLanguage());
     new window.google.translate.TranslateElement(
       {
         pageLanguage: "zh-CN",
@@ -76,12 +108,14 @@
   };
 
   document.addEventListener("DOMContentLoaded", () => {
+    markTranslationApplied(getStoredLanguage());
     document.body.classList.add("notranslate-ready");
     observeForTranslateWidget();
     window.setTimeout(() => ensureTranslation(), 1200);
   });
 
   window.addEventListener("load", () => {
+    markTranslationApplied(getStoredLanguage());
     window.setTimeout(() => ensureTranslation(), 1800);
   });
 })();
