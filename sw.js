@@ -1,7 +1,7 @@
 // Service Worker 文件 (sw.js) - 强力保活版
 
 // 缓存版本号
-const CACHE_VERSION = 'v1.7.45';
+const CACHE_VERSION = 'v1.7.46';
 const CACHE_NAME = `ephone-cache-${CACHE_VERSION}`;
 
 const URLS_TO_CACHE = [
@@ -10,7 +10,7 @@ const URLS_TO_CACHE = [
   './google-api-shim.js',
   './script.js',
   './api-model-fix.js?v=20260413b',
-  './force-english.js?v=20260414a',
+  './google-translate-fix.js?v=20260414c',
   'https://unpkg.com/dexie/dist/dexie.js',
   'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
   'https://phoebeboo.github.io/mewoooo/pp.js',

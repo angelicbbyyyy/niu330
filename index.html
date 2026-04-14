@@ -25,9 +25,50 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
   <script src="script.js" defer="defer"></script>
   <script src="api-model-fix.js?v=20260413b" defer></script>
-  <script src="force-english.js?v=20260414a" defer></script>
+  <script src="google-translate-fix.js?v=20260414c" defer></script>
+  <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" defer></script>
+  <style>
+    #google_translate_element,
+    .goog-logo-link,
+    .goog-te-gadget span,
+    .goog-te-banner-frame,
+    .goog-te-balloon-frame,
+    .goog-tooltip,
+    .goog-tooltip:hover,
+    .goog-text-highlight {
+      display: none !important;
+    }
+
+    .goog-te-gadget {
+      height: 0 !important;
+      overflow: hidden !important;
+      font-size: 0 !important;
+    }
+
+    .goog-te-combo {
+      opacity: 0 !important;
+      pointer-events: none !important;
+      position: absolute !important;
+      left: -9999px !important;
+    }
+
+    body {
+      top: 0 !important;
+    }
+
+    iframe.skiptranslate {
+      display: none !important;
+      visibility: hidden !important;
+    }
+
+    body.translated-ltr,
+    body.translated-rtl {
+      top: 0 !important;
+    }
+  </style>
 </head>
 <body>
+  <div id="google_translate_element" aria-hidden="true"></div>
   <div id="phone-screen">
     <div id="status-bar"> <span id="status-bar-time">12:00</span>
       <div id="status-bar-battery" class="battery-container"> <span class="battery-text">--%</span>
@@ -4204,7 +4245,6 @@
 
 </body>
 </html>
-
 
 
 
